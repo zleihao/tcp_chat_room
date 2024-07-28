@@ -30,7 +30,7 @@ make
    #setname <user_name>
    ~~~
 
-   ![](.\image\1.png)
+   ![](./image/1.png)
 
 2. login
 
@@ -38,9 +38,9 @@ make
    #login <user_name>
    ~~~
 
-   ![](.\image\2.png)
+   ![](./image/2.png)
 
-   ![](.\image\3.png)
+   ![](./image/3.png)
 
 3. logout
 
@@ -56,4 +56,4 @@ make
    #private <user_name> <string>
    ~~~
 
-   ![](.\image\4.png)
+   ![](./image/4.png)
