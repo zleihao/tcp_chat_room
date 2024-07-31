@@ -103,6 +103,7 @@ int set_user_name(int sfd, char *name, char *err)
 {
     int n, i;
     char *ptr;
+    char password[4] = "123";
 
     if (strlen(name) == 0) {
         n = sprintf(err, "%s", "命令错误，示例：#setname <user_name>\n\n");
@@ -137,10 +138,11 @@ int set_user_name(int sfd, char *name, char *err)
 
             memcpy(only_client[i].name, name, strlen(name));
             only_client[i].name[strlen(name)] = '\0'; // 添加字符串终止符
-
+            // 设置默认密码
+            strncpy(only_client[i].pass, "123", sizeof(only_client[i].pass));
             only_client[i].flag = 1;
             only_client[i].state = -1;
-            printf("set only_client[%d].name = %s\n", i, name);
+            printf("set only_client[%d].name = %s, only_client[%d].pss = %s, flag = %d\n", i, name, i, only_client[i].pass, only_client[i].flag);
             pthread_mutex_unlock(&client_lock);
             return i;
         }
@@ -149,58 +151,94 @@ int set_user_name(int sfd, char *name, char *err)
     return -1;
 }
 
-int login(int sfd, int index, char *name, char *err)
+int login(int sfd, int *index, char *data, char *err)
 {
-    int n, i;
-    if (only_client[index].state != -1 && index > 0) {
+    int n, i, flage = 0;
+    char *ptr;
+    char name[20], pass[20];
+
+    if (only_client[*index].state != -1 && *index >= 0) {
         n = sprintf(err, "%s", "你已经登录过了，不要重复登录（别偷摸登别人号）\n\n");
         err[n] = '\0';
         return -1;
     }
 
-    if (strlen(name) == 0) {
-        n = sprintf(err, "%s", "命令错误，示例：#login <user_name>\n\n");
+    if (strlen(data) == 0) {
+        n = sprintf(err, "%s", "命令错误，示例：#login <user_name> <password>\n\n");
         err[n] = '\0';
         return -1;
     }
 
-    pthread_mutex_lock(&client_lock);
-    for (i = 0; i < MAX_CONNECT_NUM; i++) {
-        if (only_client[i].flag == -1) {
-            continue;
-        }
-        if ((memcmp(name, only_client[i].name, strlen(name)) == 0) && (only_client[i].state == -1)) {
-            only_client[i].state = 1;
-            only_client[i].fd = sfd;
-            pthread_mutex_unlock(&client_lock);
-            return i;
-        }
-    }
-    pthread_mutex_unlock(&client_lock);
+    ptr = strchr(data, ' ');
+    if (ptr != NULL) {
+        // 复制私聊名字
+        strncpy(name, data, ptr - data);
+        name[ptr - data] = '\0';  // 添加字符串终止符
 
-    n = sprintf(err, "%s", "Username inexistence!\n\n");
-    err[n] = '\0';
+        // 移动指针到密码
+        data = ptr + 1;
+        //得到密码部分
+        strncpy(pass, data, sizeof(pass) - 1);
+        pass[strcspn(pass, "\n")] = '\0';
+
+        pthread_mutex_lock(&client_lock);
+        for (i = 0; i < MAX_CONNECT_NUM; i++) {
+            if (only_client[i].flag == -1) {
+                continue;
+            }
+
+            if ((memcmp(name, only_client[i].name, strlen(name)) == 0) &&
+                (!memcmp(pass, only_client[i].pass, strlen(pass)))) {
+                if (-1 == only_client[i].state) {
+                    only_client[i].state = 1;
+                    only_client[i].fd = sfd;
+                    pthread_mutex_unlock(&client_lock);
+                    *index = i;
+                    return i;
+                } else {
+                    flage = 1;
+                }
+            }
+        }
+        pthread_mutex_unlock(&client_lock);
+    } else {
+        n = sprintf(err, "Incorrect usage\n\n");
+        err[n] = '\0';
+        *index = -1;
+        return -1;
+    }
+
+    if (flage) {
+       n = sprintf(err, "%s", "该用户已经登录!\n\n");
+       err[n] = '\0'; 
+    } else {
+       n = sprintf(err, "%s", "Username inexistence or wrong password!\n\n");
+       err[n] = '\0'; 
+    }
+
+    *index = -1;
     return -1;
 }
 
 //每个人退出自己登录
-void logout(int sfd, int *index, char *err)
+int logout(int sfd, int *index, char *err)
 {
     int n, i;
 
-    if (*index < 0) {
-        n = sprintf(err, "%s", "You are not logged in yet, no need to log out!\n\n");
-        err[n] = '\0';
-        return;
+    printf("logout: index = %d, state = %d\n", *index, only_client[*index].state);
+    if (*index >= 0 && (only_client[*index].state == 1)) {
+        pthread_mutex_lock(&client_lock);
+        only_client[*index].fd = -1;
+        only_client[*index].state = -1;
+        pthread_mutex_unlock(&client_lock);
+
+        *index = -1;
+        return 0;
     }
 
-    pthread_mutex_lock(&client_lock);
-    only_client[*index].fd = -1;
-    only_client[*index].state = -1;
-    pthread_mutex_unlock(&client_lock);
-
-    *index = 0;
-    return;
+    n = sprintf(err, "%s", "You are not logged in yet, no need to log out!\n\n");
+    err[n] = '\0';
+    return -1;
 }
 
 int private_user(int from_index, char *data, char *err)
@@ -213,6 +251,18 @@ int private_user(int from_index, char *data, char *err)
 
     if (strlen(data) == 0) {
         n = sprintf(err, "%s", "命令错误，示例：#private <user_name> <string>\n\n");
+        err[n] = '\0';
+        return -1;
+    }
+
+    if (from_index < 0) {
+        n = sprintf(err, "%s", "请登录后再进行聊天，Thanks\n\n");
+        err[n] = '\0';
+        return -1;
+    }
+
+    if (only_client[from_index].state == -1) {
+        n = sprintf(err, "%s", "请登录后再进行聊天，Thanks\n\n");
         err[n] = '\0';
         return -1;
     }
@@ -271,10 +321,10 @@ void *handler(void *arg)
         char cmd[20];
         char data[MAX_LINE_VAL];
         char err[128];
-        char ok[40];
+        char ok[1024];
         memset(err, 0, 128);
         memset(cmd, 0, 20);
-        memset(ok, 0, 40);
+        memset(ok, 0, 1024);
         memset(data, 0, MAX_LINE_VAL);
 
         memset(buf, 0, MAX_LINE_VAL);
@@ -307,12 +357,12 @@ void *handler(void *arg)
             if (-1 == index) {
                 write(sfd, err, strlen(err));
             } else {
-                snprintf(ok, 40, "%s\n\n", "setname success!");
+                snprintf(ok, 1024, "%s\n\n", "用户名设置成功!\n默认密码为： \"123\"\n修改密码指令：#changepass <old pass> <new pass>");
                 write(sfd, ok, sizeof(ok));
             }
         } else if (!strcmp(cmd, "login")) {
             // 登录
-            if (-1 == login(sfd, index, data, err)) {
+            if (-1 == login(sfd, &index, data, err)) {
                 write(sfd, err, strlen(err));
             } else {
                 snprintf(ok, 40, "%s\n\n", "login success!");
@@ -324,8 +374,7 @@ void *handler(void *arg)
                 write(sfd, err, strlen(err));
             }
         } else if (!memcmp(cmd, "logout", strlen(cmd))) {
-            logout(sfd, &index, err);
-            if (-1 == index) {
+            if (-1 == logout(sfd, &index, err)) {
                 write(sfd, err, strlen(err));
             } else {
                 snprintf(ok, 40, "%s\n\n", "logout success!");

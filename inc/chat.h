@@ -10,7 +10,6 @@ typedef struct {
     int fd;
     int flag;
     int state;
-    int is_lock;
     char name[20];
     char pass[20];
 } client_info_t;

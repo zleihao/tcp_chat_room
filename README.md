@@ -22,9 +22,9 @@ make
 
 ## 支持的命令
 
-> 命令是以 # 开头，支持英文
+> 命令是以 # 开头
 
-1. setname
+1. **setname**
 
    ~~~c
    #setname <user_name>
@@ -32,25 +32,23 @@ make
 
    ![](./image/1.png)
 
-2. login
+2. **login**
 
    ~~~c
-   #login <user_name>
+   #login <user_name> <user_pass>
    ~~~
 
    ![](./image/2.png)
 
-   ![](./image/3.png)
-
-3. logout
+3. **logout**
 
    ~~~c
-   #logout <user_name>
+   #logout
    ~~~
 
    ![image-20240728192824456](./image/5.png)
 
-4. private
+4. **private**
 
    ~~~c
    #private <user_name> <string>
