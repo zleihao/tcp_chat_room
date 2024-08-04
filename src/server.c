@@ -9,10 +9,16 @@
 #include <arpa/inet.h>
 #include "chat.h"
 
+#define SERVER_PORT 8080
+
 client_info_t only_client[MAX_CONNECT_NUM];
 pthread_mutex_t client_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// 初始化tcp
+/**
+ * @brief 初始化socket
+ * @param null
+ * @retval 监听的 socket 描述符
+ */
 int tcp_init()
 {
     struct sockaddr_in servaddr;
@@ -27,7 +33,7 @@ int tcp_init()
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(8080);
+    servaddr.sin_port = htons(SERVER_PORT);
     if (bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
         fprintf(stderr, "%s\n", "bind init fail");
         close(listenfd);
@@ -43,7 +49,13 @@ int tcp_init()
     return listenfd;
 }
 
-// 解析命令
+/**
+ * @brief 解析输入的指令
+ * @param str: 客户端发送的数据。
+ * @param res: 解析到的指令。
+ * @param dest: 解析到的数据部分。
+ * @retval 客户发送的数据是否符合规则。
+ */
 int parse(char *str, char *res, char *dest)
 {
     int state = 0;
@@ -68,29 +80,41 @@ int parse(char *str, char *res, char *dest)
     return state;
 }
 
+/**
+ * @brief 查找指定用户的索引
+ * @param name: 查找的用户名。
+ * @retval 若是存在该用户则返回该用户的索引，若不存在则返回-1.
+ */
 int find_current_user(char *name)
 {
     for (int i = 0; i < MAX_CONNECT_NUM; i++) {
         if (only_client[i].flag == -1) {
             continue;
         }
-        if (strcmp(name, only_client[i].name) == 0) {
+        if (strncmp(name, only_client[i].name, strlen(only_client[i].name)) == 0)
+        {
             return i;
         }
     }
     return -1;
 }
 
+/**
+ * @brief 查询指定用户当前是否在线。
+ * @param name: 查询的用户名。
+ * @retval 若该用户在线则返回该用户的索引，若不在线则返回-1.
+ */
 int get_user_state(char *name)
 {
     int i = 0;
 
     for (i = 0; i < MAX_CONNECT_NUM; i++) {
+        //过滤不在线用户
         if (only_client[i].state == -1) {
             continue;
         }
 
-        int ret = memcmp(only_client[i].name, name, strlen(name));
+        int ret = memcmp(only_client[i].name, name, strlen(only_client[i].name));
         if (ret == 0) {
             return i;
         }
@@ -113,20 +137,20 @@ int set_user_name(int sfd, char *name, char *err)
 
     ptr = strchr(name, ' ');
     if (ptr != NULL) {
-        n = sprintf(err, "%s", "The name cannot contain Spaces!\n\n");
+        n = sprintf(err, "%s", "设置的昵称中不能含有空格!\n\n");
         err[n] = '\0';
         return -1;
     }
 
     if (strlen(name) > 20) {
-        n = sprintf(err, "%s", "Username is too long!\n\n");
+        n = sprintf(err, "%s", "设置的昵称过长!\n\n");
         err[n] = '\0';
         return -1;
     }
 
     pthread_mutex_lock(&client_lock);
     if (find_current_user(name) != -1) {
-        n = sprintf(err, "%s", "Username is exist!\n\n");
+        n = sprintf(err, "%s", "该昵称已存在!\n\n");
         err[n] = '\0';
         pthread_mutex_unlock(&client_lock);
         return -1;
@@ -136,8 +160,8 @@ int set_user_name(int sfd, char *name, char *err)
         if (only_client[i].flag == -1) {
             only_client[i].fd = sfd;
 
+            name[strspn(name, "\n")] = '\0';
             memcpy(only_client[i].name, name, strlen(name));
-            only_client[i].name[strlen(name)] = '\0'; // 添加字符串终止符
             // 设置默认密码
             strncpy(only_client[i].pass, "123", sizeof(only_client[i].pass));
             only_client[i].flag = 1;
@@ -187,8 +211,8 @@ int login(int sfd, int *index, char *data, char *err)
                 continue;
             }
 
-            if ((memcmp(name, only_client[i].name, strlen(name)) == 0) &&
-                (!memcmp(pass, only_client[i].pass, strlen(pass)))) {
+            if ((memcmp(name, only_client[i].name, strlen(only_client[i].name)) == 0) &&
+                (!memcmp(pass, only_client[i].pass, strlen(only_client[i].pass)))) {
                 if (-1 == only_client[i].state) {
                     only_client[i].state = 1;
                     only_client[i].fd = sfd;
@@ -209,11 +233,11 @@ int login(int sfd, int *index, char *data, char *err)
     }
 
     if (flage) {
-       n = sprintf(err, "%s", "该用户已经登录!\n\n");
-       err[n] = '\0'; 
+        n = sprintf(err, "%s", "该用户已经登录!\n\n");
+        err[n] = '\0';
     } else {
-       n = sprintf(err, "%s", "Username inexistence or wrong password!\n\n");
-       err[n] = '\0'; 
+        n = sprintf(err, "%s", "该昵称不存在或者密码错误，请重试！\n\n");
+        err[n] = '\0';
     }
 
     *index = -1;
@@ -236,9 +260,77 @@ int logout(int sfd, int *index, char *err)
         return 0;
     }
 
-    n = sprintf(err, "%s", "You are not logged in yet, no need to log out!\n\n");
+    n = sprintf(err, "%s", "您还没有登录，不需要注销!\n\n");
     err[n] = '\0';
     return -1;
+}
+
+//修改密码
+int changepass(int *index, char *data, char *err)
+{
+    int n, i;
+    char pass_old[20], pass_new[20];
+    char *ptr;
+
+    printf("%s\n", data);
+
+    //得到旧密码
+    ptr = strtok(data, " \n");
+    if (NULL == ptr) {
+        n = sprintf(err, "用法有误，请使用 #changepass <old pass> <new pass>\n\n");
+        err[n] = '\0';
+        return -1;
+    }
+    snprintf(pass_old, 20, "%s", ptr);
+
+    //得到新密码
+    ptr = strtok(NULL, " \n");
+    if (NULL == ptr) {
+        n = sprintf(err, "用法有误，请使用 #changepass <old pass> <new pass>\n\n");
+        err[n] = '\0';
+        return -1;
+    }
+    snprintf(pass_new, 20, "%s", ptr);
+
+    ptr = strtok(NULL, " \n");
+    if (ptr != NULL) {
+        n = sprintf(err, "用法有误，请使用 #changepass <old pass> <new pass>\n\n");
+        err[n] = '\0';
+        return -1;
+    }
+
+    printf("修改密码: old pass %s, new pass %s\n", pass_old, pass_new);
+
+    pthread_mutex_lock(&client_lock);
+    if (*index < 0) {
+        pthread_mutex_unlock(&client_lock);
+        n = sprintf(err, "请登录后再进行修改密码\n\n");
+        err[n] = '\0';
+        return -1;
+    } else {
+        if (-1 == only_client[*index].state) {
+            pthread_mutex_unlock(&client_lock);
+            n = sprintf(err, "请登录后再进行修改密码\n\n");
+            err[n] = '\0';
+            return -1;
+        }
+        //直接修改当前用户的密码
+        if (!strcmp(pass_old, only_client[*index].pass)) {
+            //旧密码正确，修改密码
+            strcpy(only_client[*index].pass, pass_new);
+            //密码已经更改请重新登录
+            only_client[*index].state = -1;
+            *index = -1;
+        } else {
+            pthread_mutex_unlock(&client_lock);
+            n = sprintf(err, "输入的旧密码不正确\n\n");
+            err[n] = '\0';
+            return -1;
+        }
+    }
+    pthread_mutex_unlock(&client_lock);
+
+    return 0;
 }
 
 int private_user(int from_index, char *data, char *err)
@@ -250,7 +342,7 @@ int private_user(int from_index, char *data, char *err)
     char buf[MAX_LINE_VAL];
 
     if (strlen(data) == 0) {
-        n = sprintf(err, "%s", "命令错误，示例：#private <user_name> <string>\n\n");
+        n = sprintf(err, "%s", "用法错误，示例：#private <user_name> <string>\n\n");
         err[n] = '\0';
         return -1;
     }
@@ -282,7 +374,7 @@ int private_user(int from_index, char *data, char *err)
         // 查询该用户是否在线
         index = get_user_state(name);
         if (index == -1) {
-            n = sprintf(err, "The user %s is not online or inexistence!\n\n", name);
+            n = sprintf(err, "该用户 %s 当前不在线或者不存在该用户!\n\n", name);
             err[n] = '\0';
             pthread_mutex_unlock(&client_lock);
             return -1;
@@ -302,7 +394,7 @@ int private_user(int from_index, char *data, char *err)
         }
         pthread_mutex_unlock(&client_lock);
     } else {
-        n = sprintf(err, "Incorrect usage\n\n");
+        n = sprintf(err, "%s", "用法错误，示例：#private <user_name> <string>\n\n");
         err[n] = '\0';
         return -1;
     }
@@ -345,7 +437,7 @@ void *handler(void *arg)
         // 解析数据
         ans = parse(buf, cmd, data);
         if (ans != 0) {
-            char *err_msg = "input cmd error\n\n";
+            char *err_msg = "未知的命令\n\n";
             send(sfd, err_msg, strlen(err_msg), 0);
             continue;
         }
@@ -380,6 +472,13 @@ void *handler(void *arg)
                 snprintf(ok, 40, "%s\n\n", "logout success!");
                 write(sfd, ok, sizeof(ok));
                 index = -1;
+            }
+        } else if (!memcmp(cmd, "changepass", strlen(cmd))) {
+            if (-1 == changepass(&index, data, err)) {
+                write(sfd, err, strlen(err));
+            } else {
+                snprintf(ok, 1024, "%s\n\n", "密码更改成功...\n请使用新的密码重新登录...\n\n");
+                write(sfd, ok, sizeof(ok));
             }
         } else {
             char *str = "undefine cmd\n\n";

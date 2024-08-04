@@ -48,7 +48,17 @@ make
 
    ![image-20240728192824456](./image/5.png)
 
-4. **private**
+4. **changepass**
+
+   修改密码必须登录后才可以更改
+
+   `````c
+   #changepass <old pass> <new pass>
+   `````
+
+   ![](D:\Study\chat\image\6.png)
+
+5. **private**
 
    ~~~c
    #private <user_name> <string>
