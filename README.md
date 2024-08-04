@@ -24,7 +24,15 @@ make
 
 > 命令是以 # 开头
 
-1. **setname**
+1. **help**
+
+   ```c
+   #help
+   ```
+
+   ![](./image/7.png)
+
+2. **setname**
 
    ~~~c
    #setname <user_name>
@@ -32,7 +40,7 @@ make
 
    ![](./image/1.png)
 
-2. **login**
+3. **login**
 
    ~~~c
    #login <user_name> <user_pass>
@@ -40,7 +48,7 @@ make
 
    ![](./image/2.png)
 
-3. **logout**
+4. **logout**
 
    ~~~c
    #logout
@@ -48,7 +56,7 @@ make
 
    ![image-20240728192824456](./image/5.png)
 
-4. **changepass**
+5. **changepass**
 
    修改密码必须登录后才可以更改
 
@@ -56,9 +64,9 @@ make
    #changepass <old pass> <new pass>
    `````
 
-   ![](D:\Study\chat\image\6.png)
+   ![](./image/6.png)
 
-5. **private**
+6. **private**
 
    ~~~c
    #private <user_name> <string>

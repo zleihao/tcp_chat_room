@@ -92,8 +92,7 @@ int find_current_user(char *name)
         if (only_client[i].flag == -1) {
             continue;
         }
-        if (strncmp(name, only_client[i].name, strlen(only_client[i].name)) == 0)
-        {
+        if (strncmp(name, only_client[i].name, strlen(only_client[i].name)) == 0) {
             return i;
         }
     }
@@ -164,7 +163,7 @@ int set_user_name(int sfd, char *data, char *err)
     for (i = 0; i < MAX_CONNECT_NUM; i++) {
         if (only_client[i].flag == -1) {
             only_client[i].fd = sfd;
-        
+
             strcpy(only_client[i].name, name);
             // 设置默认密码
             strncpy(only_client[i].pass, "123", sizeof(only_client[i].pass));
@@ -179,7 +178,8 @@ int set_user_name(int sfd, char *data, char *err)
     return -1;
 }
 
-void print_hex(const char *str, int len) {
+void print_hex(const char *str, int len)
+{
     for (int i = 0; i < len; i++) {
         printf("%02x ", (unsigned char)str[i]);
     }
@@ -222,8 +222,7 @@ int login(int sfd, int *index, char *data, char *err)
             print_hex(only_client[i].pass, strlen(only_client[i].pass));
 
             if (((!strcmp(name, only_client[i].name))) &&
-                (!strcmp(pass, only_client[i].pass)))
-            {
+                (!strcmp(pass, only_client[i].pass))) {
                 if (-1 == only_client[i].state) {
                     only_client[i].state = 1;
                     only_client[i].fd = sfd;
@@ -392,7 +391,7 @@ int private_user(int from_index, char *data, char *err)
 
         memcpy(from_name, only_client[from_index].name, strlen(only_client[from_index].name));
         from_name[strcspn(from_name, "\n")] = ':';
-        n = snprintf(buf, MAX_LINE_VAL, "from %s %s\n\n", from_name, data);
+        n = snprintf(buf, MAX_LINE_VAL, "\033[33mfrom %s\033[0m \033[32m%s\033[0m\n\n", from_name, data);
         buf[n] = '\0';
 
         // 发送消息给指定用户
@@ -412,7 +411,8 @@ int private_user(int from_index, char *data, char *err)
     return 0;
 }
 
-int is_all_spaces(char *str) {
+int is_all_spaces(char *str)
+{
     if (str == NULL) {
         return 0; // or handle error
     }
@@ -457,6 +457,7 @@ void *handler(void *arg)
                 pthread_mutex_unlock(&client_lock);
             }
             close(sfd);
+            printf("%s 退出\n\n", only_client[index].name);
             break;
         }
 
@@ -477,7 +478,16 @@ void *handler(void *arg)
         }
 
         cmd[strcspn(cmd, "\n")] = '\0';
-        if (!strcmp(cmd, "setname")) {
+        if (!strcmp(cmd, "help")) {
+            snprintf(ok, MAX_LINE_VAL, "目前聊天室支持以下指令：\n\
+                                        \033[32m\r注册：\t    #setname <user name>\n\
+                                        \r修改密码:   #changepass <old pass> <new pass>\n\
+                                        \r登录：\t    #login <user name> <pass>\n\
+                                        \r注销：\t    #logout\n\
+                                        \r私聊：\t    #private <object name> <string>\033[0m\n\n");
+
+            write(sfd, ok, strlen(ok));
+        } else if (!strcmp(cmd, "setname")) {
             index = set_user_name(sfd, data, err);
             // 设置用户名
             if (-1 == index) {
