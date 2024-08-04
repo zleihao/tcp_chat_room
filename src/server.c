@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 #include "chat.h"
 
 #define SERVER_PORT 8080
@@ -123,30 +124,34 @@ int get_user_state(char *name)
     return -1;
 }
 
-int set_user_name(int sfd, char *name, char *err)
+int set_user_name(int sfd, char *data, char *err)
 {
     int n, i;
     char *ptr;
     char password[4] = "123";
+    char name[20];
 
-    if (strlen(name) == 0) {
+    if (strlen(data) == 0) {
         n = sprintf(err, "%s", "命令错误，示例：#setname <user_name>\n\n");
         err[n] = '\0';
         return -1;
     }
 
-    ptr = strchr(name, ' ');
+    ptr = strchr(data, ' ');
     if (ptr != NULL) {
         n = sprintf(err, "%s", "设置的昵称中不能含有空格!\n\n");
         err[n] = '\0';
         return -1;
     }
 
-    if (strlen(name) > 20) {
+    if (strlen(data) > 20) {
         n = sprintf(err, "%s", "设置的昵称过长!\n\n");
         err[n] = '\0';
         return -1;
     }
+
+    ptr = strtok(data, " \n");
+    strcpy(name, ptr);
 
     pthread_mutex_lock(&client_lock);
     if (find_current_user(name) != -1) {
@@ -159,9 +164,8 @@ int set_user_name(int sfd, char *name, char *err)
     for (i = 0; i < MAX_CONNECT_NUM; i++) {
         if (only_client[i].flag == -1) {
             only_client[i].fd = sfd;
-
-            name[strspn(name, "\n")] = '\0';
-            memcpy(only_client[i].name, name, strlen(name));
+        
+            strcpy(only_client[i].name, name);
             // 设置默认密码
             strncpy(only_client[i].pass, "123", sizeof(only_client[i].pass));
             only_client[i].flag = 1;
@@ -173,6 +177,13 @@ int set_user_name(int sfd, char *name, char *err)
     }
     pthread_mutex_unlock(&client_lock);
     return -1;
+}
+
+void print_hex(const char *str, int len) {
+    for (int i = 0; i < len; i++) {
+        printf("%02x ", (unsigned char)str[i]);
+    }
+    printf("\n");
 }
 
 int login(int sfd, int *index, char *data, char *err)
@@ -193,26 +204,26 @@ int login(int sfd, int *index, char *data, char *err)
         return -1;
     }
 
-    ptr = strchr(data, ' ');
     if (ptr != NULL) {
+        ptr = strtok(data, " \n");
         // 复制私聊名字
-        strncpy(name, data, ptr - data);
-        name[ptr - data] = '\0';  // 添加字符串终止符
+        strcpy(name, ptr);
 
-        // 移动指针到密码
-        data = ptr + 1;
         //得到密码部分
-        strncpy(pass, data, sizeof(pass) - 1);
-        pass[strcspn(pass, "\n")] = '\0';
-
+        ptr = strtok(NULL, " \n");
+        strcpy(pass, ptr);
+        printf("name: %s, pass: %s\n", name, pass);
         pthread_mutex_lock(&client_lock);
         for (i = 0; i < MAX_CONNECT_NUM; i++) {
             if (only_client[i].flag == -1) {
                 continue;
             }
+            print_hex(pass, strlen(pass));
+            print_hex(only_client[i].pass, strlen(only_client[i].pass));
 
-            if ((memcmp(name, only_client[i].name, strlen(only_client[i].name)) == 0) &&
-                (!memcmp(pass, only_client[i].pass, strlen(only_client[i].pass)))) {
+            if (((!strcmp(name, only_client[i].name))) &&
+                (!strcmp(pass, only_client[i].pass)))
+            {
                 if (-1 == only_client[i].state) {
                     only_client[i].state = 1;
                     only_client[i].fd = sfd;
@@ -240,7 +251,6 @@ int login(int sfd, int *index, char *data, char *err)
         err[n] = '\0';
     }
 
-    *index = -1;
     return -1;
 }
 
@@ -402,6 +412,21 @@ int private_user(int from_index, char *data, char *err)
     return 0;
 }
 
+int is_all_spaces(char *str) {
+    if (str == NULL) {
+        return 0; // or handle error
+    }
+
+    while (*str) {
+        if (!isspace((unsigned char)*str)) {
+            return 0; // 不是空格字符
+        }
+        str++;
+    }
+
+    return 1; // 全是空格字符
+}
+
 void *handler(void *arg)
 {
     char buf[MAX_LINE_VAL];
@@ -414,6 +439,7 @@ void *handler(void *arg)
         char data[MAX_LINE_VAL];
         char err[128];
         char ok[1024];
+        char *ptr;
         memset(err, 0, 128);
         memset(cmd, 0, 20);
         memset(ok, 0, 1024);
@@ -432,6 +458,14 @@ void *handler(void *arg)
             }
             close(sfd);
             break;
+        }
+
+        //判断用户输入
+        if (is_all_spaces(buf)) {
+            continue;
+        }
+        if (buf[0] == '\n') {
+            continue;
         }
 
         // 解析数据
